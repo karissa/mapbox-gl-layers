@@ -1,5 +1,16 @@
 var yo = require('yo-yo')
-var Control = require('mapbox-gl/js/ui/control/control')
+var css = require('sheetify')
+
+const styles = css`
+  :host {
+    max-height: 100vh;
+    overflow: scroll;
+    background: #fff;
+    border-radius: 5px;
+    padding: 5px;
+    box-shadow: 0px 0px 3px #888;
+  }
+`
 
 module.exports = Layers
 
@@ -8,7 +19,6 @@ module.exports = Layers
  * @param {Object} [options]
  * @param {string} [options.type='multiple'] Selection type: `multiple` to allow independently toggling each layer/group, `single` to only choose one at a time.
  * @param {Object} [options.layers] An object determining which layers to include.  Each key is a display name (what's shown in the UI), and each value is the corresponding layer id in the map style (or an array of layer ids).
- * @param {string} [options.position='top-right'] A string indicating position on the map. Options are `top-right`, `top-left`, `bottom-right`, `bottom-left`.
  * @param {function} [options.onChange] Optional callback called with `{name: dispayName, layerIds: [...], active: true|false }` for the clicked layer
  * @example
  * (new Layers({ 'National Parks': 'national_park', 'Other Parks': 'parks' }))
@@ -26,15 +36,16 @@ function Layers (options) {
     this.options.layers = layers
   }
 
+
+  this._container = document.createElement('div');
   this._onClick = this._onClick.bind(this)
   this._isActive = this._isActive.bind(this)
   this._layerExists = this._layerExists.bind(this)
   this._update = this._update.bind(this)
 }
 
-Layers.prototype = Object.create(Control.prototype)
 Layers.prototype.constructor = Layers
-Layers.prototype.options = { position: 'top-right', type: 'multiple' }
+Layers.prototype.options = { type: 'multiple' }
 Layers.prototype.onAdd = function onAdd (map) {
   this._map = map
   var style = map.getStyle()
@@ -61,38 +72,42 @@ Layers.prototype.onAdd = function onAdd (map) {
   this._map.on('style.change', this._update)
   this._map.style.on('layer.remove', this._update)
   this._map.style.on('layer.add', this._update)
-  return this._render()
+  this._update()
+  return this._container
 }
 
 Layers.prototype.onRemove = function onRemove () {
+  this._container.parentNode.removeChild(this._container);
   this._map.off('style.change', this._update)
   this._map.style.off('layer.remove', this._update)
   this._map.style.off('layer.add', this._update)
+  this._map = undefined;
 }
 
 Layers.prototype._update = function _update () {
   this._allLayers = this._map.getStyle().layers.map((layer) => layer.id)
   yo.update(this._container, this._render())
 }
+
 Layers.prototype._render = function _render () {
   var layers = this.options.layers
-  var className = 'mapboxgl-ctrl mapboxgl-layers'
+  var className = 'mapboxgl-ctrl'
   return yo`
-  <div class="${className}">
-    <ul>
+  <div class="${className} ${styles}">
     ${Object.keys(layers)
       .filter((name) => layers[name].some(this._layerExists))
       .map((name) => {
         var ids = layers[name].filter(this._layerExists)
-        var className = ids.every(this._isActive) ? 'active'
+        var active = ids.every(this._isActive)
+        var className = active ? 'active'
           : ids.some(this._isActive) ? 'active partially-active'
           : ''
         return yo`
-        <li data-layer-name=${name} data-layer-id=${ids.join(',')} class=${className} onclick=${this._onClick}>
+        <div>
+          <input ${active ? 'checked': ''} type="radio" name=${this.options.type === 'single' ? 'layer' : `${name}`} data-layer-name=${name} data-layer-id=${ids.join(',')} class=${className} onclick=${this._onClick} />
           ${name}
-        </li>`
+        </div>`
       })}
-    </ul>
   </div>
   `
 }
@@ -131,6 +146,7 @@ Layers.prototype._onClick = function _onClick (e) {
       active: activated
     })
   }
+  this._update()
 }
 
 Layers.prototype._isActive = function isActive (id) {
@@ -140,4 +156,3 @@ Layers.prototype._isActive = function isActive (id) {
 Layers.prototype._layerExists = function (id) {
   return this._allLayers.indexOf(id) >= 0
 }
-
